@@ -27,11 +27,9 @@ import nox
 BLACK_VERSION = "black==19.10b0"
 BLACK_PATHS = ["docs", "google", "tests", "noxfile.py", "setup.py"]
 
-PYTYPE_VERSION = "pytype==2021.09.09"
-
 DEFAULT_PYTHON_VERSION = "3.8"
 SYSTEM_TEST_PYTHON_VERSIONS = ["3.8"]
-UNIT_TEST_PYTHON_VERSIONS = ["3.6", "3.7", "3.8", "3.9"]
+UNIT_TEST_PYTHON_VERSIONS = ["3.6", "3.7", "3.8", "3.9", "3.10"]
 
 CURRENT_DIRECTORY = pathlib.Path(__file__).parent.absolute()
 
@@ -44,7 +42,6 @@ nox.options.sessions = [
     "lint_setup_py",
     "blacken",
     "docs",
-    "pytype",  # Custom pytype session
 ]
 
 # Error if a python version is missing
@@ -81,7 +78,9 @@ def lint_setup_py(session):
     session.run("python", "setup.py", "check", "--restructuredtext", "--strict")
 
 
-def install_test_deps(session):
+def default(session):
+    # Install all test dependencies, then install this package in-place.
+
     constraints_path = str(
         CURRENT_DIRECTORY / "testing" / f"constraints-{session.python}.txt"
     )
@@ -94,27 +93,20 @@ def install_test_deps(session):
         "-c",
         constraints_path,
     )
-    session.install("asynctest", "-c", constraints_path)
 
     session.install("-e", ".", "-c", constraints_path)
-
-
-def default(session):
-    # Install all test dependencies, then install this package in-place.
-    install_test_deps(session)
 
     # Run py.test against the unit tests.
     session.run(
         "py.test",
         "--quiet",
         f"--junitxml=unit_{session.python}_sponge_log.xml",
-        "--cov=google/cloud",
+        "--cov=google",
         "--cov=tests/unit",
         "--cov-append",
         "--cov-config=.coveragerc",
         "--cov-report=",
         "--cov-fail-under=0",
-        "-v",
         os.path.join("tests", "unit"),
         *session.posargs,
     )
@@ -153,9 +145,7 @@ def system(session):
 
     # Install all test dependencies, then install this package into the
     # virtualenv's dist-packages.
-    session.install(
-        "mock", "pytest", "google-cloud-testutils", "asynctest", "-c", constraints_path
-    )
+    session.install("mock", "pytest", "google-cloud-testutils", "-c", constraints_path)
     session.install("-e", ".", "-c", constraints_path)
 
     # Run py.test against the system tests.
@@ -185,7 +175,7 @@ def cover(session):
     test runs (not system test runs), and then erases coverage data.
     """
     session.install("coverage", "pytest-cov")
-    session.run("coverage", "report", "--show-missing", "--fail-under=70")
+    session.run("coverage", "report", "--show-missing", "--fail-under=100")
 
     session.run("coverage", "erase")
 
@@ -245,11 +235,3 @@ def docfx(session):
         os.path.join("docs", ""),
         os.path.join("docs", "_build", "html", ""),
     )
-
-
-@nox.session(python=DEFAULT_PYTHON_VERSION)
-def pytype(session):
-    """Run type checks."""
-    install_test_deps(session)
-    session.install(PYTYPE_VERSION)
-    session.run("pytype", "google/cloud/pubsublite")
